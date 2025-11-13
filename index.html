@@ -228,12 +228,22 @@
 
         .reader-content .sentence {
             transition: background-color 0.3s;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 3px;
+            user-select: none;
+        }
+
+        .reader-content .sentence:hover {
+            background-color: #e0e7ff;
         }
 
         .reader-content .sentence.highlighted {
             background-color: #fef3c7;
-            padding: 2px 4px;
-            border-radius: 3px;
+        }
+
+        .reader-content .sentence:active {
+            background-color: #c7d2fe;
         }
 
         .page-nav {
@@ -701,6 +711,16 @@
                 installPrompt.classList.remove('active');
             }
         });
+    </script>
+    
+    <!-- Eruda Console for mobile debugging - shows logs directly on iPhone -->
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>
+        // Enable Eruda console on mobile devices or when ?debug=true is in URL
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.location.search.includes('debug=true')) {
+            eruda.init();
+            console.log('🔍 Eruda console enabled - Tap the floating button in bottom-right to view logs');
+        }
     </script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 // Novel Reader App - Improved with better TTS and sync - iOS compatible
-// Version: 1.1.0 - iOS audio fixes - Deployed 2025-11-13
+// Version: 1.2.0 - Click-to-read feature and improved reading controls
 class NovelReader {
     constructor() {
         this.novelText = '';
@@ -19,6 +19,8 @@ class NovelReader {
         this.audioQueue = [];
         this.audioContext = null; // For iOS compatibility
         this.audioUnlocked = false; // Track if audio is unlocked for iOS
+        this.speechSynthesis = null; // Web Speech API for iOS
+        this.useWebSpeech = false; // Use Web Speech API instead of TTS APIs
         
         // TTS API settings - using multiple fallbacks for better reliability
         this.selectedTTSProvider = 'google'; // 'google' or 'kokoro'
@@ -435,7 +437,7 @@ class NovelReader {
         this.chapterNav.style.display = this.chapters.length > 1 ? 'flex' : 'none';
     }
 
-        renderCurrentPage() {
+    renderCurrentPage() {
         const pages = this.pagesPerChapter[this.currentChapterIndex];
         if (!pages || pages.length === 0) return;
         
@@ -478,7 +480,6 @@ class NovelReader {
         
         this.saveProgress();
     }
-
     
     getPageWordOffset(chapterIndex, pageIndex) {
         let wordCount = 0;
@@ -553,7 +554,9 @@ class NovelReader {
         
         // Start reading from here
         this.startReading();
-    }    previousPage() {
+    }
+
+    previousPage() {
         if (this.currentPage > 0) {
             this.currentPage--;
             this.renderCurrentPage();
@@ -648,7 +651,7 @@ class NovelReader {
         this.controlsSection.classList.add('active');
         this.fileNameDisplay.classList.add('active');
         
-        this.fileNameDisplay.textContent = '­ƒôä ' + this.fileName;
+        this.fileNameDisplay.textContent = 'ðŸ“„ ' + this.fileName;
         this.progressText.textContent = `Ready to read (${this.chapters.length} chapters)`;
     }
 
@@ -723,9 +726,9 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                     playPromise.then(() => {
                         silentAudio.pause();
                         this.audioUnlocked = true;
-                        console.log('Ô£à Audio unlocked for iOS');
+                        console.log('âœ… Audio unlocked for iOS');
                     }).catch(err => {
-                        console.error('ÔØî Audio unlock failed:', err);
+                        console.error('âŒ Audio unlock failed:', err);
                         // Still mark as attempted
                         this.audioUnlocked = true;
                     });
@@ -734,7 +737,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                     this.audioUnlocked = true;
                 }
             } catch (err) {
-                console.error('ÔØî Audio unlock error:', err);
+                console.error('âŒ Audio unlock error:', err);
                 this.audioUnlocked = true; // Mark as attempted
             }
         }
@@ -764,7 +767,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
 
         this.isReading = true;
         this.isPaused = false;
-        this.playBtn.textContent = 'ÔÅ©´©Å';
+        this.playBtn.textContent = 'â¸ï¸';
         this.stopBtn.disabled = false;
         this.skipBtn.disabled = false;
         
@@ -782,7 +785,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
         }
         this.isReading = false;
         this.isPaused = true;
-        this.playBtn.textContent = 'ÔûÂ´©Å';
+        this.playBtn.textContent = 'â–¶ï¸';
         this.progressText.textContent = 'Paused';
     }
 
@@ -792,7 +795,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
         }
         this.isReading = true;
         this.isPaused = false;
-        this.playBtn.textContent = 'ÔÅ©´©Å';
+        this.playBtn.textContent = 'â¸ï¸';
         this.updateProgressText();
     }
 
@@ -803,7 +806,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
         }
         this.isReading = false;
         this.isPaused = false;
-        this.playBtn.textContent = 'ÔûÂ´©Å';
+        this.playBtn.textContent = 'â–¶ï¸';
         this.stopBtn.disabled = true;
         this.skipBtn.disabled = true;
         this.clearHighlights();
@@ -862,15 +865,20 @@ Days turned into weeks as the adventure continued. New friends were made, challe
         }
         
         try {
+            console.log('ðŸŽ¯ Starting readNextPhrase for:', phrase.substring(0, 50) + '...');
             const audioUrl = await this.generateSpeech(phrase);
             
             if (!audioUrl) {
+                console.error('âŒ No audio URL returned from generateSpeech');
+                this.progressText.textContent = 'Failed to generate audio URL';
                 // Fallback: skip to next phrase on error
                 if (this.isReading) {
                     setTimeout(() => this.readNextPhrase(), 500);
                 }
                 return;
             }
+            
+            console.log('ðŸŽµ Creating Audio element with URL:', audioUrl.substring(0, 100) + '...');
             
             // Create and play audio - iOS compatible
             this.currentAudio = new Audio(audioUrl);
@@ -879,35 +887,43 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             this.currentAudio.preload = 'auto';
             this.currentAudio.setAttribute('playsinline', 'true');
             this.currentAudio.setAttribute('webkit-playsinline', 'true');
-            this.currentAudio.setAttribute('crossorigin', 'anonymous');
+            
+            // Only set crossorigin for blob URLs (Kokoro), not for Google Translate URLs
+            // Google Translate TTS doesn't support CORS properly
+            if (audioUrl.startsWith('blob:')) {
+                this.currentAudio.setAttribute('crossorigin', 'anonymous');
+            } else {
+                // Remove crossorigin for Google Translate to avoid CORS issues
+                this.currentAudio.removeAttribute('crossorigin');
+            }
             
             // Set volume (iOS may mute if volume is 0)
             this.currentAudio.volume = 1.0;
             
             // Add loading event
             this.currentAudio.addEventListener('loadstart', () => {
-                console.log('­ƒôÑ Audio loading started');
+                console.log('ðŸ“¥ Audio loading started');
                 if (this.isIOS()) {
                     this.progressText.textContent = 'Loading audio...';
                 }
             });
             
             this.currentAudio.addEventListener('canplay', () => {
-                console.log('Ô£à Audio can play');
+                console.log('âœ… Audio can play');
             });
             
             this.currentAudio.addEventListener('loadeddata', () => {
-                console.log('Ô£à Audio data loaded');
+                console.log('âœ… Audio data loaded');
                 // Audio is ready, try to play
                 const playPromise = this.currentAudio.play();
                 if (playPromise !== undefined) {
                     playPromise.then(() => {
-                        console.log('ÔûÂ´©Å Audio playing');
+                        console.log('â–¶ï¸ Audio playing');
                         if (this.isIOS()) {
                             this.progressText.textContent = 'Playing... (check device volume)';
                         }
                     }).catch(err => {
-                        console.error('ÔØî Play error:', err);
+                        console.error('âŒ Play error:', err);
                         this.progressText.textContent = `Error: ${err.message}. Try tapping Play again.`;
                         // If play fails, try to unlock audio again
                         if (!this.audioUnlocked) {
@@ -915,7 +931,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                             setTimeout(() => {
                                 if (this.currentAudio && this.isReading) {
                                     this.currentAudio.play().catch(e => {
-                                        console.error('ÔØî Retry play error:', e);
+                                        console.error('âŒ Retry play error:', e);
                                         this.progressText.textContent = `Playback failed: ${e.message}`;
                                         if (this.isReading) {
                                             this.readNextPhrase();
@@ -954,8 +970,41 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             });
             
             this.currentAudio.addEventListener('error', (e) => {
-                console.error('ÔØî Audio playback error:', e);
-                this.progressText.textContent = `Audio error: ${e.message || 'Failed to load audio'}`;
+                const error = this.currentAudio.error;
+                let errorMsg = 'Unknown audio error';
+                
+                if (error) {
+                    switch(error.code) {
+                        case error.MEDIA_ERR_ABORTED:
+                            errorMsg = 'Audio loading aborted';
+                            break;
+                        case error.MEDIA_ERR_NETWORK:
+                            errorMsg = 'Network error loading audio (check internet connection)';
+                            break;
+                        case error.MEDIA_ERR_DECODE:
+                            errorMsg = 'Audio decode error (invalid audio format)';
+                            break;
+                        case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                            errorMsg = 'Audio format not supported (try Kokoro voice)';
+                            break;
+                        default:
+                            errorMsg = `Audio error code: ${error.code}`;
+                    }
+                }
+                
+                console.error('âŒ Audio playback error:', {
+                    error: e,
+                    audioError: error,
+                    message: errorMsg,
+                    audioUrl: audioUrl.substring(0, 100),
+                    isIOS: this.isIOS()
+                });
+                
+                this.progressText.textContent = `âŒ ${errorMsg}`;
+                if (this.isIOS()) {
+                    this.progressText.textContent += ' (iOS: Check console for details)';
+                }
+                
                 // Clean up blob URL on error
                 if (audioUrl.startsWith('blob:')) {
                     URL.revokeObjectURL(audioUrl);
@@ -965,7 +1014,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                         if (this.isReading) {
                             this.readNextPhrase();
                         }
-                    }, 500);
+                    }, 1000);
                 }
             });
             
@@ -976,7 +1025,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             this.highlightCurrentPhraseInPage();
             
         } catch (error) {
-            console.error('ÔØî TTS Error:', error);
+            console.error('âŒ TTS Error:', error);
             this.progressText.textContent = `TTS Error: ${error.message || 'Failed to generate speech'}`;
             if (this.isIOS()) {
                 this.progressText.textContent += ' (iOS: Try Kokoro voice)';
@@ -1001,24 +1050,36 @@ Days turned into weeks as the adventure continued. New friends were made, challe
     async generateSpeech(text) {
         // iOS Safari often blocks Google Translate TTS, prefer Kokoro on iOS
         const preferKokoro = this.isIOS();
+        const useKokoro = preferKokoro || this.selectedTTSProvider === 'kokoro';
+        
+        console.log(`ðŸŽ¤ TTS Provider selection:`, {
+            isIOS: this.isIOS(),
+            preferKokoro,
+            selectedProvider: this.selectedTTSProvider,
+            willUse: useKokoro ? 'Kokoro' : 'Google'
+        });
         
         try {
-            if (preferKokoro || this.selectedTTSProvider === 'kokoro') {
+            if (useKokoro) {
+                console.log('ðŸ“ž Calling Kokoro TTS...');
                 return await this.generateKokoroSpeech(text);
             } else {
+                console.log('ðŸ“ž Calling Google TTS...');
                 return await this.generateGoogleSpeech(text);
             }
         } catch (error) {
-            console.error('Speech generation error:', error);
+            console.error('âŒ Primary TTS provider failed:', error);
             // Fallback to the other provider
             try {
-                if (preferKokoro || this.selectedTTSProvider === 'kokoro') {
+                const fallbackProvider = useKokoro ? 'Google' : 'Kokoro';
+                console.log(`ðŸ”„ Trying fallback provider: ${fallbackProvider}...`);
+                if (useKokoro) {
                     return await this.generateGoogleSpeech(text);
                 } else {
                     return await this.generateKokoroSpeech(text);
                 }
             } catch (fallbackError) {
-                console.error('Fallback speech generation also failed:', fallbackError);
+                console.error('âŒ Fallback speech generation also failed:', fallbackError);
                 return null;
             }
         }
@@ -1027,32 +1088,48 @@ Days turned into weeks as the adventure continued. New friends were made, challe
     async generateGoogleSpeech(text) {
         // Using Google Translate TTS as a free fallback
         // Note: For production, use Google Cloud Text-to-Speech API with proper authentication
+        console.log('ðŸ”Š Generating Google TTS for:', text.substring(0, 50) + '...');
         const encodedText = encodeURIComponent(text);
         const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob&ttsspeed=${this.speed}`;
+        console.log('âœ… Google TTS URL created:', audioUrl.substring(0, 100) + '...');
         return audioUrl;
     }
 
     async generateKokoroSpeech(text) {
-        const response = await fetch('https://voice-generator.pages.dev/api/v1/audio/speech', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: 'kokoro-v0_19',
-                input: text,
-                voice: this.selectedVoice,
-                speed: this.speed
-            })
-        });
+        console.log('ðŸ”Š Generating Kokoro TTS for:', text.substring(0, 50) + '...');
+        console.log('ðŸ“¤ Kokoro request:', { voice: this.selectedVoice, speed: this.speed });
         
-        if (!response.ok) {
-            throw new Error(`Kokoro API error: ${response.status}`);
+        try {
+            const response = await fetch('https://voice-generator.pages.dev/api/v1/audio/speech', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: 'kokoro-v0_19',
+                    input: text,
+                    voice: this.selectedVoice,
+                    speed: this.speed
+                })
+            });
+            
+            console.log('ðŸ“¥ Kokoro response status:', response.status, response.statusText);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('âŒ Kokoro API error:', response.status, errorText);
+                throw new Error(`Kokoro API error: ${response.status} - ${errorText.substring(0, 100)}`);
+            }
+            
+            const audioBlob = await response.blob();
+            console.log('âœ… Kokoro audio blob received:', audioBlob.size, 'bytes, type:', audioBlob.type);
+            const audioUrl = URL.createObjectURL(audioBlob);
+            console.log('âœ… Kokoro audio URL created:', audioUrl);
+            return audioUrl;
+        } catch (error) {
+            console.error('âŒ Kokoro fetch error:', error);
+            throw error;
         }
-        
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        return audioUrl;
     }
 
     highlightCurrentPhraseInPage() {
@@ -1122,3 +1199,5 @@ document.addEventListener('DOMContentLoaded', () => {
     const app = new NovelReader();
     console.log('Novel Reader initialized with ResponsiveVoice');
 });
+
+// Version 1.2.0 - Added click-to-read and improved reading controls
