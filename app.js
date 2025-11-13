@@ -1,4 +1,5 @@
-// Novel Reader App - Improved with better TTS and sync
+// Novel Reader App - Improved with better TTS and sync - iOS compatible
+// Version: 1.1.0 - iOS audio fixes - Deployed 2025-11-13
 class NovelReader {
     constructor() {
         this.novelText = '';
@@ -16,6 +17,8 @@ class NovelReader {
         this.isPaused = false;
         this.currentAudio = null;
         this.audioQueue = [];
+        this.audioContext = null; // For iOS compatibility
+        this.audioUnlocked = false; // Track if audio is unlocked for iOS
         
         // TTS API settings - using multiple fallbacks for better reliability
         this.selectedTTSProvider = 'google'; // 'google' or 'kokoro'
@@ -113,8 +116,11 @@ class NovelReader {
         // File input
         this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
         
-        // Buttons
-        this.playBtn.addEventListener('click', () => this.togglePlayPause());
+        // Buttons - iOS requires audio unlock on first user interaction
+        this.playBtn.addEventListener('click', () => {
+            this.unlockAudioForIOS();
+            this.togglePlayPause();
+        });
         this.stopBtn.addEventListener('click', () => this.stopReading());
         this.skipBtn.addEventListener('click', () => this.skipForward());
         this.clearBtn.addEventListener('click', () => this.clearText());
@@ -611,6 +617,22 @@ Days turned into weeks as the adventure continued. New friends were made, challe
         }
     }
 
+    unlockAudioForIOS() {
+        // iOS Safari requires audio to be unlocked on first user interaction
+        if (!this.audioUnlocked) {
+            // Create a silent audio buffer and play it immediately
+            const silentAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
+            silentAudio.volume = 0;
+            silentAudio.play().then(() => {
+                silentAudio.pause();
+                this.audioUnlocked = true;
+                console.log('Audio unlocked for iOS');
+            }).catch(err => {
+                console.log('Audio unlock attempt:', err);
+            });
+        }
+    }
+
     togglePlayPause() {
         if (this.isReading) {
             this.pauseReading();
@@ -624,11 +646,21 @@ Days turned into weeks as the adventure continued. New friends were made, challe
     startReading() {
         if (this.words.length === 0) return;
 
+        // Ensure audio is unlocked for iOS
+        if (!this.audioUnlocked) {
+            this.unlockAudioForIOS();
+        }
+
         this.isReading = true;
         this.isPaused = false;
         this.playBtn.textContent = '⏸️';
         this.stopBtn.disabled = false;
         this.skipBtn.disabled = false;
+        
+        // Show iOS-specific message if needed
+        if (this.isIOS()) {
+            this.progressText.textContent = 'Starting playback... (iOS)';
+        }
         
         this.readNextPhrase();
     }
@@ -729,11 +761,45 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                 return;
             }
             
-            // Create and play audio
+            // Create and play audio - iOS compatible
             this.currentAudio = new Audio(audioUrl);
             
+            // iOS Safari requires these attributes
+            this.currentAudio.preload = 'auto';
+            this.currentAudio.setAttribute('playsinline', 'true');
+            this.currentAudio.setAttribute('webkit-playsinline', 'true');
+            
+            // Set volume (iOS may mute if volume is 0)
+            this.currentAudio.volume = 1.0;
+            
+            this.currentAudio.addEventListener('loadeddata', () => {
+                // Audio is ready, try to play
+                this.currentAudio.play().catch(err => {
+                    console.error('Play error:', err);
+                    // If play fails, try to unlock audio again
+                    if (!this.audioUnlocked) {
+                        this.unlockAudioForIOS();
+                        setTimeout(() => {
+                            if (this.currentAudio && this.isReading) {
+                                this.currentAudio.play().catch(e => {
+                                    console.error('Retry play error:', e);
+                                    if (this.isReading) {
+                                        this.readNextPhrase();
+                                    }
+                                });
+                            }
+                        }, 100);
+                    } else if (this.isReading) {
+                        this.readNextPhrase();
+                    }
+                });
+            });
+            
             this.currentAudio.addEventListener('ended', () => {
-                URL.revokeObjectURL(audioUrl);
+                // Clean up blob URL if it's a blob
+                if (audioUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(audioUrl);
+                }
                 this.updateProgress();
                 this.checkAndTurnPage();
                 
@@ -749,16 +815,19 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             
             this.currentAudio.addEventListener('error', (e) => {
                 console.error('Audio playback error:', e);
+                // Clean up blob URL on error
+                if (audioUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(audioUrl);
+                }
                 if (this.isReading) {
                     setTimeout(() => this.readNextPhrase(), 500);
                 }
             });
             
+            // Try to play immediately (iOS may require this)
             this.currentAudio.play().catch(err => {
-                console.error('Play error:', err);
-                if (this.isReading) {
-                    this.readNextPhrase();
-                }
+                console.log('Initial play attempt (may fail on iOS until loaded):', err.message);
+                // Will retry in loadeddata event
             });
             
             this.updateProgressText();
@@ -774,21 +843,30 @@ Days turned into weeks as the adventure continued. New friends were made, challe
         }
     }
 
+    isIOS() {
+        // Detect iOS devices
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
     async generateSpeech(text) {
+        // iOS Safari often blocks Google Translate TTS, prefer Kokoro on iOS
+        const preferKokoro = this.isIOS();
+        
         try {
-            if (this.selectedTTSProvider === 'google') {
-                return await this.generateGoogleSpeech(text);
-            } else {
+            if (preferKokoro || this.selectedTTSProvider === 'kokoro') {
                 return await this.generateKokoroSpeech(text);
+            } else {
+                return await this.generateGoogleSpeech(text);
             }
         } catch (error) {
             console.error('Speech generation error:', error);
             // Fallback to the other provider
             try {
-                if (this.selectedTTSProvider === 'google') {
-                    return await this.generateKokoroSpeech(text);
-                } else {
+                if (preferKokoro || this.selectedTTSProvider === 'kokoro') {
                     return await this.generateGoogleSpeech(text);
+                } else {
+                    return await this.generateKokoroSpeech(text);
                 }
             } catch (fallbackError) {
                 console.error('Fallback speech generation also failed:', fallbackError);
