@@ -435,13 +435,21 @@ class NovelReader {
         this.chapterNav.style.display = this.chapters.length > 1 ? 'flex' : 'none';
     }
 
-    renderCurrentPage() {
+        renderCurrentPage() {
         const pages = this.pagesPerChapter[this.currentChapterIndex];
         if (!pages || pages.length === 0) return;
+        
+        // Stop reading when changing pages/chapters
+        if (this.isReading) {
+            this.stopReading();
+        }
         
         const pageText = pages[this.currentPage] || '';
         
         this.readerContent.innerHTML = '';
+        
+        // Calculate word index offset for this page
+        const wordOffset = this.getPageWordOffset(this.currentChapterIndex, this.currentPage);
         
         const sentences = pageText.match(/[^.!?]+[.!?]+/g) || [pageText];
         
@@ -449,7 +457,15 @@ class NovelReader {
             const span = document.createElement('span');
             span.className = 'sentence';
             span.setAttribute('data-sentence-index', index);
+            span.setAttribute('data-word-offset', wordOffset);
+            span.title = 'Click to start reading from here';
             span.textContent = sentence + ' ';
+            
+            // Make sentence clickable to start reading from that point
+            span.addEventListener('click', () => {
+                this.startReadingFromSentence(span, wordOffset, sentence);
+            });
+            
             this.readerContent.appendChild(span);
         });
         
@@ -463,7 +479,81 @@ class NovelReader {
         this.saveProgress();
     }
 
-    previousPage() {
+    
+    getPageWordOffset(chapterIndex, pageIndex) {
+        let wordCount = 0;
+        
+        // Count words in all previous chapters
+        for (let i = 0; i < chapterIndex; i++) {
+            const chapter = this.chapters[i];
+            if (chapter && chapter.text) {
+                wordCount += chapter.text.split(/\s+/).filter(w => w.trim().length > 0).length;
+            }
+        }
+        
+        // Count words in current chapter up to this page
+        const pages = this.pagesPerChapter[chapterIndex];
+        if (pages) {
+            for (let i = 0; i < pageIndex && i < pages.length; i++) {
+                wordCount += pages[i].split(/\s+/).filter(w => w.trim().length > 0).length;
+            }
+        }
+        
+        return wordCount;
+    }
+    
+    startReadingFromSentence(span, wordOffset, sentence) {
+        // Stop current reading if any
+        if (this.isReading) {
+            this.stopReading();
+        }
+        
+        // Get the current page text to find sentence position
+        const pages = this.pagesPerChapter[this.currentChapterIndex];
+        const pageText = pages[this.currentPage] || '';
+        const sentences = pageText.match(/[^.!?]+[.!?]+/g) || [pageText];
+        
+        // Find which sentence was clicked
+        const sentenceIndex = parseInt(span.getAttribute('data-sentence-index'));
+        
+        // Count words before this sentence in current page
+        let wordsBeforeSentence = 0;
+        for (let i = 0; i < sentenceIndex; i++) {
+            const words = sentences[i].split(/\s+/).filter(w => w.trim().length > 0);
+            wordsBeforeSentence += words.length;
+        }
+        
+        // Calculate total word offset
+        const totalWordOffset = wordOffset + wordsBeforeSentence;
+        
+        // Find the exact position in the full words array
+        let wordCount = 0;
+        let foundOffset = 0;
+        
+        for (let i = 0; i < this.words.length; i++) {
+            if (wordCount >= totalWordOffset) {
+                foundOffset = i;
+                break;
+            }
+            if (!this.words[i].isWhitespace) {
+                wordCount++;
+            }
+        }
+        
+        // Set reading position
+        this.currentWordIndex = foundOffset;
+        this.updateProgress();
+        
+        // Highlight the clicked sentence
+        this.clearHighlights();
+        span.classList.add('highlighted');
+        
+        // Scroll to the sentence
+        span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Start reading from here
+        this.startReading();
+    }    previousPage() {
         if (this.currentPage > 0) {
             this.currentPage--;
             this.renderCurrentPage();
@@ -558,7 +648,7 @@ class NovelReader {
         this.controlsSection.classList.add('active');
         this.fileNameDisplay.classList.add('active');
         
-        this.fileNameDisplay.textContent = 'üìÑ ' + this.fileName;
+        this.fileNameDisplay.textContent = '≠ÉÙ‰ ' + this.fileName;
         this.progressText.textContent = `Ready to read (${this.chapters.length} chapters)`;
     }
 
@@ -633,9 +723,9 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                     playPromise.then(() => {
                         silentAudio.pause();
                         this.audioUnlocked = true;
-                        console.log('‚úÖ Audio unlocked for iOS');
+                        console.log('‘£‡ Audio unlocked for iOS');
                     }).catch(err => {
-                        console.error('‚ùå Audio unlock failed:', err);
+                        console.error('‘ÿÓ Audio unlock failed:', err);
                         // Still mark as attempted
                         this.audioUnlocked = true;
                     });
@@ -644,7 +734,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                     this.audioUnlocked = true;
                 }
             } catch (err) {
-                console.error('‚ùå Audio unlock error:', err);
+                console.error('‘ÿÓ Audio unlock error:', err);
                 this.audioUnlocked = true; // Mark as attempted
             }
         }
@@ -674,7 +764,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
 
         this.isReading = true;
         this.isPaused = false;
-        this.playBtn.textContent = '‚è∏Ô∏è';
+        this.playBtn.textContent = '‘≈©¥©≈';
         this.stopBtn.disabled = false;
         this.skipBtn.disabled = false;
         
@@ -692,7 +782,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
         }
         this.isReading = false;
         this.isPaused = true;
-        this.playBtn.textContent = '‚ñ∂Ô∏è';
+        this.playBtn.textContent = '‘˚¬¥©≈';
         this.progressText.textContent = 'Paused';
     }
 
@@ -702,7 +792,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
         }
         this.isReading = true;
         this.isPaused = false;
-        this.playBtn.textContent = '‚è∏Ô∏è';
+        this.playBtn.textContent = '‘≈©¥©≈';
         this.updateProgressText();
     }
 
@@ -713,7 +803,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
         }
         this.isReading = false;
         this.isPaused = false;
-        this.playBtn.textContent = '‚ñ∂Ô∏è';
+        this.playBtn.textContent = '‘˚¬¥©≈';
         this.stopBtn.disabled = true;
         this.skipBtn.disabled = true;
         this.clearHighlights();
@@ -796,28 +886,28 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             
             // Add loading event
             this.currentAudio.addEventListener('loadstart', () => {
-                console.log('üì• Audio loading started');
+                console.log('≠ÉÙ— Audio loading started');
                 if (this.isIOS()) {
                     this.progressText.textContent = 'Loading audio...';
                 }
             });
             
             this.currentAudio.addEventListener('canplay', () => {
-                console.log('‚úÖ Audio can play');
+                console.log('‘£‡ Audio can play');
             });
             
             this.currentAudio.addEventListener('loadeddata', () => {
-                console.log('‚úÖ Audio data loaded');
+                console.log('‘£‡ Audio data loaded');
                 // Audio is ready, try to play
                 const playPromise = this.currentAudio.play();
                 if (playPromise !== undefined) {
                     playPromise.then(() => {
-                        console.log('‚ñ∂Ô∏è Audio playing');
+                        console.log('‘˚¬¥©≈ Audio playing');
                         if (this.isIOS()) {
                             this.progressText.textContent = 'Playing... (check device volume)';
                         }
                     }).catch(err => {
-                        console.error('‚ùå Play error:', err);
+                        console.error('‘ÿÓ Play error:', err);
                         this.progressText.textContent = `Error: ${err.message}. Try tapping Play again.`;
                         // If play fails, try to unlock audio again
                         if (!this.audioUnlocked) {
@@ -825,7 +915,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                             setTimeout(() => {
                                 if (this.currentAudio && this.isReading) {
                                     this.currentAudio.play().catch(e => {
-                                        console.error('‚ùå Retry play error:', e);
+                                        console.error('‘ÿÓ Retry play error:', e);
                                         this.progressText.textContent = `Playback failed: ${e.message}`;
                                         if (this.isReading) {
                                             this.readNextPhrase();
@@ -864,7 +954,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             });
             
             this.currentAudio.addEventListener('error', (e) => {
-                console.error('‚ùå Audio playback error:', e);
+                console.error('‘ÿÓ Audio playback error:', e);
                 this.progressText.textContent = `Audio error: ${e.message || 'Failed to load audio'}`;
                 // Clean up blob URL on error
                 if (audioUrl.startsWith('blob:')) {
@@ -886,7 +976,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             this.highlightCurrentPhraseInPage();
             
         } catch (error) {
-            console.error('‚ùå TTS Error:', error);
+            console.error('‘ÿÓ TTS Error:', error);
             this.progressText.textContent = `TTS Error: ${error.message || 'Failed to generate speech'}`;
             if (this.isIOS()) {
                 this.progressText.textContent += ' (iOS: Try Kokoro voice)';
