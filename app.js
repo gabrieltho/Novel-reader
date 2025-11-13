@@ -888,17 +888,19 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             this.currentAudio.setAttribute('playsinline', 'true');
             this.currentAudio.setAttribute('webkit-playsinline', 'true');
             
-            // Only set crossorigin for blob URLs (Kokoro), not for Google Translate URLs
-            // Google Translate TTS doesn't support CORS properly
-            if (audioUrl.startsWith('blob:')) {
-                this.currentAudio.setAttribute('crossorigin', 'anonymous');
-            } else {
-                // Remove crossorigin for Google Translate to avoid CORS issues
-                this.currentAudio.removeAttribute('crossorigin');
-            }
+            // Blob URLs are same-origin, so don't set crossorigin
+            // Google Translate URLs also don't need crossorigin (and it causes CORS issues)
+            this.currentAudio.removeAttribute('crossorigin');
             
             // Set volume (iOS may mute if volume is 0)
             this.currentAudio.volume = 1.0;
+            
+            // For blob URLs (Kokoro), ensure the audio format is recognized
+            if (audioUrl.startsWith('blob:')) {
+                // Blob URLs should work without crossorigin
+                // The MIME type is already set correctly in the blob creation
+                console.log('🎵 Using blob URL for audio playback');
+            }
             
             // Add loading event
             this.currentAudio.addEventListener('loadstart', () => {
@@ -985,7 +987,11 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                             errorMsg = 'Audio decode error (invalid audio format)';
                             break;
                         case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                            errorMsg = 'Audio format not supported (try Kokoro voice)';
+                            if (this.selectedTTSProvider === 'kokoro') {
+                                errorMsg = 'Audio format not supported - Kokoro audio format issue (check console for details)';
+                            } else {
+                                errorMsg = 'Audio format not supported (try Kokoro voice)';
+                            }
                             break;
                         default:
                             errorMsg = `Audio error code: ${error.code}`;
@@ -1114,6 +1120,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             });
             
             console.log('📥 Kokoro response status:', response.status, response.statusText);
+            console.log('📥 Kokoro Content-Type:', response.headers.get('Content-Type'));
             
             if (!response.ok) {
                 const errorText = await response.text();
@@ -1121,10 +1128,26 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                 throw new Error(`Kokoro API error: ${response.status} - ${errorText.substring(0, 100)}`);
             }
             
-            const audioBlob = await response.blob();
-            console.log('✅ Kokoro audio blob received:', audioBlob.size, 'bytes, type:', audioBlob.type);
+            // Get the content type from response headers
+            const contentType = response.headers.get('Content-Type') || 'audio/wav';
+            console.log('📥 Detected audio format:', contentType);
+            
+            // Get the audio data as array buffer first
+            const arrayBuffer = await response.arrayBuffer();
+            console.log('✅ Kokoro audio data received:', arrayBuffer.byteLength, 'bytes');
+            
+            // Create blob with explicit MIME type (Kokoro typically returns WAV)
+            // If Content-Type is not set, default to audio/wav which Kokoro uses
+            const audioBlob = new Blob([arrayBuffer], { 
+                type: contentType.includes('audio') ? contentType : 'audio/wav' 
+            });
+            
+            console.log('✅ Kokoro audio blob created:', audioBlob.size, 'bytes, type:', audioBlob.type);
+            
+            // Create object URL
             const audioUrl = URL.createObjectURL(audioBlob);
             console.log('✅ Kokoro audio URL created:', audioUrl);
+            
             return audioUrl;
         } catch (error) {
             console.error('❌ Kokoro fetch error:', error);
