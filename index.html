@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Novel Reader">
+    <meta name="theme-color" content="#2563eb">
+    <title>Novel Reader - AI Voice</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-512.png">
+    
+    <!-- PDF.js Library for PDF Support -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    
+    <!-- JSZip for EPUB Support -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
+    <!-- Howler.js for audio playback -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 25px;
+        }
+
+        .file-name {
+            background: #f3f4f6;
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            color: #374151;
+            display: none;
+        }
+
+        .file-name.active {
+            display: block;
+        }
+
+        .import-section {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .import-section.hidden {
+            display: none;
+        }
+
+        .import-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+
+        .import-section h2 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #1f2937;
+        }
+
+        .import-section p {
+            color: #6b7280;
+            margin-bottom: 25px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(37, 99, 235, 0.4);
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .text-display {
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 0;
+            max-height: 500px;
+            margin-bottom: 20px;
+            display: none;
+            flex-direction: column;
+        }
+
+        .text-display.active {
+            display: flex;
+        }
+
+        .chapter-nav {
+            display: flex;
+            gap: 10px;
+            padding: 15px;
+            background: #f3f4f6;
+            border-bottom: 2px solid #e5e7eb;
+            align-items: center;
+        }
+
+        .chapter-btn {
+            padding: 8px 16px;
+            border: none;
+            background: #2563eb;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .chapter-btn:hover:not(:disabled) {
+            background: #1d4ed8;
+        }
+
+        .chapter-btn:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .chapter-select {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+        }
+
+        .reader-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: white;
+            min-height: 300px;
+            max-height: 350px;
+        }
+
+        .reader-content {
+            line-height: 1.8;
+            font-size: 16px;
+            color: #1f2937;
+        }
+
+        .reader-content .sentence {
+            transition: background-color 0.3s;
+        }
+
+        .reader-content .sentence.highlighted {
+            background-color: #fef3c7;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        .page-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: #f3f4f6;
+            border-top: 2px solid #e5e7eb;
+        }
+
+        .page-btn {
+            padding: 8px 20px;
+            border: none;
+            background: #10b981;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .page-btn:hover:not(:disabled) {
+            background: #059669;
+        }
+
+        .page-btn:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .page-info {
+            font-size: 14px;
+            color: #6b7280;
+            font-weight: 500;
+        }
+
+        .controls {
+            display: none;
+            margin-bottom: 20px;
+        }
+
+        .controls.active {
+            display: block;
+        }
+
+        .progress-bar {
+            background: #e5e7eb;
+            border-radius: 10px;
+            height: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            background: linear-gradient(90deg, #2563eb 0%, #3b82f6 100%);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .progress-text {
+            text-align: center;
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 20px;
+        }
+
+        .settings {
+            background: #f9fafb;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .settings h3 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #1f2937;
+        }
+
+        .setting-item {
+            margin-bottom: 15px;
+        }
+
+        .setting-item label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .setting-item input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 5px;
+            background: #d1d5db;
+            outline: none;
+        }
+
+        .setting-item input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #2563eb;
+            cursor: pointer;
+        }
+
+        .setting-item select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+        }
+
+        .playback-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            padding: 20px 0;
+        }
+
+        .control-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            transition: all 0.3s;
+            color: white;
+        }
+
+        .control-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .control-btn.play {
+            width: 90px;
+            height: 90px;
+            background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+            font-size: 36px;
+        }
+
+        .control-btn.play:hover:not(:disabled) {
+            transform: scale(1.1);
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4);
+        }
+
+        .control-btn.stop {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+
+        .control-btn.stop:hover:not(:disabled) {
+            transform: scale(1.05);
+        }
+
+        .control-btn.skip {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+
+        .control-btn.skip:hover:not(:disabled) {
+            transform: scale(1.05);
+        }
+
+        .textarea-import {
+            width: 100%;
+            min-height: 200px;
+            padding: 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            margin-bottom: 15px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: #1f2937;
+        }
+
+        .modal-close {
+            float: right;
+            font-size: 28px;
+            cursor: pointer;
+            color: #6b7280;
+            line-height: 1;
+            margin-top: -5px;
+        }
+
+        .install-prompt {
+            background: #dbeafe;
+            border: 2px solid #3b82f6;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .install-prompt.active {
+            display: block;
+        }
+
+        .install-prompt p {
+            margin-bottom: 10px;
+            color: #1e40af;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 0;
+            }
+
+            .container {
+                border-radius: 0;
+                min-height: 100vh;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .content {
+                padding: 20px;
+            }
+
+            .control-btn {
+                width: 60px;
+                height: 60px;
+                font-size: 24px;
+            }
+
+            .control-btn.play {
+                width: 80px;
+                height: 80px;
+                font-size: 32px;
+            }
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 Novel Reader</h1>
+            <p>AI-Powered Text-to-Speech</p>
+        </div>
+
+        <div class="content">
+            <!-- Install Prompt -->
+            <div class="install-prompt" id="installPrompt">
+                <p><strong>💡 Install this app!</strong></p>
+                <p>Add to your home screen for a better experience.</p>
+                <button class="btn btn-primary btn-small" id="installBtn">Install App</button>
+            </div>
+
+            <!-- File Name Display -->
+            <div class="file-name" id="fileName"></div>
+
+            <!-- Import Section -->
+            <div class="import-section" id="importSection">
+                <div class="import-icon">📖</div>
+                <h2>Add Your Novel</h2>
+                <p>Import a file or paste your text</p>
+                
+                <div class="btn-group" style="justify-content: center;">
+                    <label for="fileInput" class="btn btn-primary">
+                        📁 Choose File
+                    </label>
+                    <button class="btn btn-primary" id="pasteBtn">
+                        📋 Paste Text
+                    </button>
+                    <button class="btn btn-success" id="sampleBtn">
+                        📄 Load Sample
+                    </button>
+                </div>
+                
+                <input type="file" id="fileInput" accept=".txt,.pdf,.epub,.doc,.docx,.rtf,.mobi">
+            </div>
+
+            <!-- Text Display -->
+            <div class="text-display" id="textDisplay">
+                <!-- Chapter Navigation -->
+                <div class="chapter-nav" id="chapterNav" style="display: none;">
+                    <button class="chapter-btn" id="prevChapterBtn">← Previous</button>
+                    <select id="chapterSelect" class="chapter-select">
+                        <option value="0">Select Chapter...</option>
+                    </select>
+                    <button class="chapter-btn" id="nextChapterBtn">Next →</button>
+                </div>
+                
+                <!-- Reading Area -->
+                <div class="reader-container">
+                    <div class="reader-content" id="readerContent"></div>
+                </div>
+                
+                <!-- Page Navigation -->
+                <div class="page-nav" id="pageNav">
+                    <button class="page-btn" id="prevPageBtn">← Previous</button>
+                    <div class="page-info" id="pageInfo">Page 1 of 1</div>
+                    <button class="page-btn" id="nextPageBtn">Next →</button>
+                </div>
+            </div>
+
+            <!-- Controls Section -->
+            <div class="controls" id="controlsSection">
+                <!-- Progress -->
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">Ready to read</div>
+
+                <!-- Settings -->
+                <div class="settings">
+                    <h3>⚙️ Voice Settings</h3>
+                    
+                    <div class="setting-item">
+                        <label>
+                            <span>Speed</span>
+                            <span id="speedValue">1.0x</span>
+                        </label>
+                        <input type="range" id="speedSlider" min="0.5" max="2.0" step="0.1" value="1.0">
+                    </div>
+
+                    <div class="setting-item">
+                        <label>
+                            <span>Pitch</span>
+                            <span id="pitchValue">1.0</span>
+                        </label>
+                        <input type="range" id="pitchSlider" min="0.5" max="2.0" step="0.1" value="1.0">
+                    </div>
+
+                    <div class="setting-item">
+                        <label>Voice</label>
+                        <select id="voiceSelect">
+                            <option value="">Loading voices...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Playback Controls -->
+                <div class="playback-controls">
+                    <button class="control-btn stop" id="stopBtn" disabled>
+                        ⏹️
+                    </button>
+                    <button class="control-btn play" id="playBtn">
+                        ▶️
+                    </button>
+                    <button class="control-btn skip" id="skipBtn" disabled>
+                        ⏭️
+                    </button>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="btn-group">
+                    <button class="btn btn-danger btn-small" id="clearBtn">Clear Text</button>
+                    <button class="btn btn-primary btn-small" id="changeFileBtn">Change File</button>
+                </div>
+            </div>
+            
+            <!-- Kokoro TTS Attribution -->
+            <div style="text-align: center; padding: 15px; font-size: 11px; color: #6b7280; border-top: 1px solid #e5e7eb; margin-top: 10px;">
+                Voice powered by <a href="https://github.com/hexgrad/Kokoro-82M" target="_blank" style="color: #2563eb; text-decoration: none;">Kokoro TTS</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Paste Modal -->
+    <div class="modal" id="pasteModal">
+        <div class="modal-content">
+            <span class="modal-close" id="closeModal">&times;</span>
+            <h2 class="modal-header">Paste Your Text</h2>
+            <textarea class="textarea-import" id="pasteTextarea" placeholder="Paste your novel text here..."></textarea>
+            <button class="btn btn-primary" id="importTextBtn">Import Text</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(reg => console.log('Service Worker registered'))
+                    .catch(err => console.log('Service Worker registration failed'));
+            });
+        }
+
+        // Install prompt for PWA
+        let deferredPrompt;
+        const installPrompt = document.getElementById('installPrompt');
+        const installBtn = document.getElementById('installBtn');
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            installPrompt.classList.add('active');
+        });
+
+        installBtn.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                console.log(`User response: ${outcome}`);
+                deferredPrompt = null;
+                installPrompt.classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html>

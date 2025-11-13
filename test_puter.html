@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Puter.js TTS</title>
+</head>
+<body>
+    <h1>Puter.js TTS Test</h1>
+    <button id="testBtn">Test Voice</button>
+    <div id="status"></div>
+    
+    <script src="https://js.puter.com/v2/"></script>
+    <script>
+        document.getElementById('testBtn').addEventListener('click', async () => {
+            const status = document.getElementById('status');
+            status.textContent = 'Testing...';
+            
+            try {
+                const audio = await puter.ai.txt2speech("Hello, this is a test.", {
+                    voice: "Joanna",
+                    engine: "neural",
+                    language: "en-US"
+                });
+                
+                status.textContent = 'Playing audio...';
+                audio.play();
+                
+                audio.addEventListener('ended', () => {
+                    status.textContent = 'Audio finished!';
+                });
+                
+            } catch (error) {
+                status.textContent = 'Error: ' + error.message;
+                console.error('Full error:', error);
+            }
+        });
+    </script>
+</body>
+</html>
