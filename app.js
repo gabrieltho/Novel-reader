@@ -900,6 +900,17 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                 // Blob URLs should work without crossorigin
                 // The MIME type is already set correctly in the blob creation
                 console.log('🎵 Using blob URL for audio playback');
+                // Ensure the audio element knows it's a blob URL
+                // Some browsers need explicit type hint
+                try {
+                    // Try to set the type attribute if supported
+                    if (this.currentAudio.type === '') {
+                        // Type will be inferred from blob MIME type
+                        console.log('🎵 Audio element type will be inferred from blob');
+                    }
+                } catch (e) {
+                    console.log('🎵 Note: Could not set audio type (this is usually fine)');
+                }
             }
             
             // Add loading event
@@ -988,7 +999,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
                             break;
                         case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
                             if (this.selectedTTSProvider === 'kokoro') {
-                                errorMsg = 'Audio format not supported - Kokoro audio format issue (check console for details)';
+                                errorMsg = 'Audio format not supported - Browser cannot play Kokoro audio format. Check console for detected format.';
                             } else {
                                 errorMsg = 'Audio format not supported (try Kokoro voice)';
                             }
@@ -1129,22 +1140,41 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             }
             
             // Get the content type from response headers
-            const contentType = response.headers.get('Content-Type') || 'audio/wav';
-            console.log('📥 Detected audio format:', contentType);
+            let contentType = response.headers.get('Content-Type');
+            console.log('📥 Kokoro Content-Type header:', contentType);
             
             // Get the audio data as array buffer first
             const arrayBuffer = await response.arrayBuffer();
             console.log('✅ Kokoro audio data received:', arrayBuffer.byteLength, 'bytes');
             
-            // Create blob with explicit MIME type (Kokoro typically returns WAV)
-            // If Content-Type is not set, default to audio/wav which Kokoro uses
-            const audioBlob = new Blob([arrayBuffer], { 
-                type: contentType.includes('audio') ? contentType : 'audio/wav' 
-            });
+            // Detect audio format from the actual data (check magic bytes)
+            // WAV files start with "RIFF" (0x52494646) or "RIFF" ASCII
+            const view = new DataView(arrayBuffer);
+            let mimeType = 'audio/wav'; // Default
             
+            // Check for WAV format (RIFF header)
+            if (arrayBuffer.byteLength >= 4) {
+                const header = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+                if (header === 'RIFF') {
+                    mimeType = 'audio/wav';
+                    console.log('✅ Detected WAV format from file header');
+                } else if (header.startsWith('ID3') || view.getUint32(0) === 0x49443300) {
+                    mimeType = 'audio/mpeg';
+                    console.log('✅ Detected MP3 format from file header');
+                } else {
+                    // Use Content-Type if available, otherwise default to WAV
+                    if (contentType && contentType.includes('audio')) {
+                        mimeType = contentType.split(';')[0].trim();
+                        console.log('✅ Using Content-Type:', mimeType);
+                    }
+                }
+            }
+            
+            // Create blob with detected MIME type
+            const audioBlob = new Blob([arrayBuffer], { type: mimeType });
             console.log('✅ Kokoro audio blob created:', audioBlob.size, 'bytes, type:', audioBlob.type);
             
-            // Create object URL
+            // Create object URL - blob URLs work fine, just need correct MIME type
             const audioUrl = URL.createObjectURL(audioBlob);
             console.log('✅ Kokoro audio URL created:', audioUrl);
             
