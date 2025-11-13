@@ -618,18 +618,35 @@ Days turned into weeks as the adventure continued. New friends were made, challe
     }
 
     unlockAudioForIOS() {
-        // iOS Safari requires audio to be unlocked on first user interaction
+        // iOS Safari requires audio to be unlocked synchronously on first user interaction
         if (!this.audioUnlocked) {
-            // Create a silent audio buffer and play it immediately
-            const silentAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
-            silentAudio.volume = 0;
-            silentAudio.play().then(() => {
-                silentAudio.pause();
-                this.audioUnlocked = true;
-                console.log('Audio unlocked for iOS');
-            }).catch(err => {
-                console.log('Audio unlock attempt:', err);
-            });
+            try {
+                // Create a silent audio buffer and play it immediately (synchronously)
+                const silentAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
+                silentAudio.volume = 0.01; // iOS needs non-zero volume
+                silentAudio.setAttribute('playsinline', 'true');
+                silentAudio.setAttribute('webkit-playsinline', 'true');
+                
+                // Play synchronously - don't wait for promise
+                const playPromise = silentAudio.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        silentAudio.pause();
+                        this.audioUnlocked = true;
+                        console.log('✅ Audio unlocked for iOS');
+                    }).catch(err => {
+                        console.error('❌ Audio unlock failed:', err);
+                        // Still mark as attempted
+                        this.audioUnlocked = true;
+                    });
+                } else {
+                    // Older browsers
+                    this.audioUnlocked = true;
+                }
+            } catch (err) {
+                console.error('❌ Audio unlock error:', err);
+                this.audioUnlocked = true; // Mark as attempted
+            }
         }
     }
 
@@ -643,12 +660,16 @@ Days turned into weeks as the adventure continued. New friends were made, challe
         }
     }
 
-    startReading() {
+    async startReading() {
         if (this.words.length === 0) return;
 
-        // Ensure audio is unlocked for iOS
+        // Ensure audio is unlocked for iOS BEFORE starting
         if (!this.audioUnlocked) {
             this.unlockAudioForIOS();
+            // Give iOS a moment to unlock audio
+            if (this.isIOS()) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
         }
 
         this.isReading = true;
@@ -659,7 +680,7 @@ Days turned into weeks as the adventure continued. New friends were made, challe
         
         // Show iOS-specific message if needed
         if (this.isIOS()) {
-            this.progressText.textContent = 'Starting playback... (iOS)';
+            this.progressText.textContent = 'Starting playback... (iOS - ensure sound is on)';
         }
         
         this.readNextPhrase();
@@ -768,31 +789,60 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             this.currentAudio.preload = 'auto';
             this.currentAudio.setAttribute('playsinline', 'true');
             this.currentAudio.setAttribute('webkit-playsinline', 'true');
+            this.currentAudio.setAttribute('crossorigin', 'anonymous');
             
             // Set volume (iOS may mute if volume is 0)
             this.currentAudio.volume = 1.0;
             
+            // Add loading event
+            this.currentAudio.addEventListener('loadstart', () => {
+                console.log('📥 Audio loading started');
+                if (this.isIOS()) {
+                    this.progressText.textContent = 'Loading audio...';
+                }
+            });
+            
+            this.currentAudio.addEventListener('canplay', () => {
+                console.log('✅ Audio can play');
+            });
+            
             this.currentAudio.addEventListener('loadeddata', () => {
+                console.log('✅ Audio data loaded');
                 // Audio is ready, try to play
-                this.currentAudio.play().catch(err => {
-                    console.error('Play error:', err);
-                    // If play fails, try to unlock audio again
-                    if (!this.audioUnlocked) {
-                        this.unlockAudioForIOS();
-                        setTimeout(() => {
-                            if (this.currentAudio && this.isReading) {
-                                this.currentAudio.play().catch(e => {
-                                    console.error('Retry play error:', e);
-                                    if (this.isReading) {
-                                        this.readNextPhrase();
-                                    }
-                                });
-                            }
-                        }, 100);
-                    } else if (this.isReading) {
-                        this.readNextPhrase();
-                    }
-                });
+                const playPromise = this.currentAudio.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        console.log('▶️ Audio playing');
+                        if (this.isIOS()) {
+                            this.progressText.textContent = 'Playing... (check device volume)';
+                        }
+                    }).catch(err => {
+                        console.error('❌ Play error:', err);
+                        this.progressText.textContent = `Error: ${err.message}. Try tapping Play again.`;
+                        // If play fails, try to unlock audio again
+                        if (!this.audioUnlocked) {
+                            this.unlockAudioForIOS();
+                            setTimeout(() => {
+                                if (this.currentAudio && this.isReading) {
+                                    this.currentAudio.play().catch(e => {
+                                        console.error('❌ Retry play error:', e);
+                                        this.progressText.textContent = `Playback failed: ${e.message}`;
+                                        if (this.isReading) {
+                                            this.readNextPhrase();
+                                        }
+                                    });
+                                }
+                            }, 200);
+                        } else if (this.isReading) {
+                            this.progressText.textContent = 'Audio playback blocked. Check device settings.';
+                            setTimeout(() => {
+                                if (this.isReading) {
+                                    this.readNextPhrase();
+                                }
+                            }, 1000);
+                        }
+                    });
+                }
             });
             
             this.currentAudio.addEventListener('ended', () => {
@@ -814,31 +864,40 @@ Days turned into weeks as the adventure continued. New friends were made, challe
             });
             
             this.currentAudio.addEventListener('error', (e) => {
-                console.error('Audio playback error:', e);
+                console.error('❌ Audio playback error:', e);
+                this.progressText.textContent = `Audio error: ${e.message || 'Failed to load audio'}`;
                 // Clean up blob URL on error
                 if (audioUrl.startsWith('blob:')) {
                     URL.revokeObjectURL(audioUrl);
                 }
                 if (this.isReading) {
-                    setTimeout(() => this.readNextPhrase(), 500);
+                    setTimeout(() => {
+                        if (this.isReading) {
+                            this.readNextPhrase();
+                        }
+                    }, 500);
                 }
             });
             
-            // Try to play immediately (iOS may require this)
-            this.currentAudio.play().catch(err => {
-                console.log('Initial play attempt (may fail on iOS until loaded):', err.message);
-                // Will retry in loadeddata event
-            });
+            // Load the audio (don't play immediately - wait for loadeddata event)
+            this.currentAudio.load();
             
             this.updateProgressText();
             this.highlightCurrentPhraseInPage();
             
         } catch (error) {
-            console.error('TTS Error:', error);
-            this.progressText.textContent = 'Error: ' + error.message;
+            console.error('❌ TTS Error:', error);
+            this.progressText.textContent = `TTS Error: ${error.message || 'Failed to generate speech'}`;
+            if (this.isIOS()) {
+                this.progressText.textContent += ' (iOS: Try Kokoro voice)';
+            }
             // Try next phrase instead of stopping
             if (this.isReading) {
-                setTimeout(() => this.readNextPhrase(), 500);
+                setTimeout(() => {
+                    if (this.isReading) {
+                        this.readNextPhrase();
+                    }
+                }, 1000);
             }
         }
     }
